@@ -11,7 +11,7 @@ from typing import Any
 class ResultLogger:
     """Logs experiment results to CSV and JSONL files."""
 
-    def __init__(self, csv_path: str = "results.csv", jsonl_path: str = "press_releases.jsonl"):
+    def __init__(self, csv_path: str = "data/results.csv", jsonl_path: str = "data/press_releases.jsonl"):
         """
         Initialize result logger.
 

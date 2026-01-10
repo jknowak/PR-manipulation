@@ -267,8 +267,8 @@ for scenario in [A, B, C]:
 
 | File | Contents |
 |------|----------|
-| `results.csv` | All runs with scores |
-| `press_releases.jsonl` | Full text of each generation |
+| `data/results.csv` | All runs with scores |
+| `data/press_releases.jsonl` | Full text of each generation |
 | `analysis.ipynb` | Visualization and statistical analysis |
 
 ---

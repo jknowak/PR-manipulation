@@ -14,7 +14,7 @@ from typing import Optional
 class OpenRouterClient:
     """Client for calling OpenRouter API."""
 
-    def __init__(self, api_key: Optional[str] = None, log_file: str = "api_calls.log"):
+    def __init__(self, api_key: Optional[str] = None, log_file: str = "data/api_calls.log"):
         """
         Initialize OpenRouter client.
 

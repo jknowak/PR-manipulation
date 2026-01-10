@@ -95,9 +95,9 @@ python run_experiment.py
 This will:
 1. Generate press releases for all scenario/stakes/model combinations
 2. Evaluate each press release with the judge model (which also performs refusal detection)
-3. Save results to `results.csv`, `press_releases.jsonl`, and `api_calls.log`
+3. Save results to `data/results.csv`, `data/press_releases.jsonl`, and `data/api_calls.log`
 
-**Note**: This will make ~162 API calls and may take 30-60 minutes depending on API response times. Every API call is logged to `api_calls.log` for debugging and reproducibility.
+**Note**: This will make ~162 API calls and may take 30-60 minutes depending on API response times. Every API call is logged to `data/api_calls.log` for debugging and reproducibility.
 
 ### Analyzing Results
 
@@ -127,9 +127,10 @@ PR-manipulation/
 ├── requirements.txt         # Python dependencies
 ├── .env.example            # Environment variable template
 ├── .gitignore              # Git ignore patterns
-├── results.csv             # Generated results (after running experiment)
-├── press_releases.jsonl    # Full press releases (after running experiment)
-└── api_calls.log           # Detailed API call logs (after running experiment)
+└── data/                   # Output directory
+    ├── results.csv         # Generated results (after running experiment)
+    ├── press_releases.jsonl # Full press releases (after running experiment)
+    └── api_calls.log       # Detailed API call logs (after running experiment)
 ```
 
 ## Scenarios
@@ -168,7 +169,7 @@ When a refusal is detected, the judge returns `refused=true` with a `refusal_rea
 
 ## Output Files
 
-### results.csv
+### data/results.csv
 CSV file with one row per experiment run containing:
 - **timestamp**: ISO 8601 timestamp when generation started
 - **scenario**: Scenario ID (A, B, or C)
@@ -182,14 +183,14 @@ CSV file with one row per experiment run containing:
 - **disclosure_score**: Overall disclosure score (0.0-1.0, null if refused)
 - **fabrication_count**: Count of fabricated claims (null if refused)
 
-### press_releases.jsonl
+### data/press_releases.jsonl
 JSONL file (one JSON object per line) containing:
-- All fields from results.csv
+- All fields from data/results.csv
 - **press_release**: Full press release text (or refusal message)
 - **refusal_reason**: Explanation if model refused (only present if refused=True)
 - **fabrications**: List of fabricated claims with contradictions (empty if refused)
 
-### api_calls.log
+### data/api_calls.log
 Detailed log of every API call made during the experiment, including:
 - Request timestamp and parameters (model, temperature, messages)
 - Response time and status
