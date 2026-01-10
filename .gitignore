@@ -209,3 +209,4 @@ __marimo__/
 # Project-specific output files
 results.csv
 press_releases.jsonl
+api_calls.log

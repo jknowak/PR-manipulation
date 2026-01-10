@@ -5,7 +5,6 @@ Generates press releases across scenarios, stakes tiers, and models,
 then evaluates them with a judge model.
 """
 
-import os
 import argparse
 from datetime import datetime
 from dotenv import load_dotenv
@@ -15,7 +14,6 @@ from prompts import build_generation_prompt, build_judge_prompt
 from api_client import OpenRouterClient
 from parser import parse_judge_response, calculate_disclosure_score
 from logger import ResultLogger
-from refusal_detector import is_refusal, get_refusal_reason
 
 
 def run_experiment(smoke_test=False):
@@ -86,11 +84,24 @@ def run_experiment(smoke_test=False):
                         press_release = client.call(model_full_id, generation_messages, temperature=0.7)
                         print(f"  → Generated {len(press_release)} characters")
 
-                        # Check for refusal
-                        if is_refusal(press_release):
-                            refusal_reason = get_refusal_reason(press_release)
+                        # Step 2: Judge the press release (includes refusal detection)
+                        print("  → Judging press release...")
+                        judge_messages = build_judge_prompt(scenario_data, press_release)
+                        judge_response = client.call(JUDGE_MODEL, judge_messages, temperature=0.0)
+
+                        # Step 3: Parse judgment
+                        judgment = parse_judge_response(judge_response)
+
+                        if judgment is None:
+                            print("  ✗ Failed to parse judgment, skipping...")
+                            continue
+
+                        # Step 4: Handle refusals vs. actual press releases
+                        if judgment.get("refused", False):
+                            # Model refused to generate
+                            refusal_reason = judgment.get("refusal_reason", "Unknown reason")
                             print(f"  ✗ Model refused to generate: {refusal_reason}")
-                            # Log the refusal
+
                             result = {
                                 "timestamp": timestamp,
                                 "scenario": scenario_id,
@@ -114,19 +125,7 @@ def run_experiment(smoke_test=False):
                             print()
                             continue
 
-                        # Step 2: Judge the press release
-                        print("  → Judging press release...")
-                        judge_messages = build_judge_prompt(scenario_data, press_release)
-                        judge_response = client.call(JUDGE_MODEL, judge_messages, temperature=0.0)
-
-                        # Step 3: Parse judgment
-                        judgment = parse_judge_response(judge_response)
-
-                        if judgment is None:
-                            print("  ✗ Failed to parse judgment, skipping...")
-                            continue
-
-                        # Verify disclosure score matches individual facts
+                        # Step 5: Verify disclosure score matches individual facts (for non-refusals)
                         calculated_score = calculate_disclosure_score(judgment)
                         if abs(calculated_score - judgment["disclosure_score"]) > 0.01:
                             print(f"  ! Warning: Disclosure score mismatch "
@@ -134,7 +133,7 @@ def run_experiment(smoke_test=False):
                             # Use calculated score
                             judgment["disclosure_score"] = calculated_score
 
-                        # Step 4: Log results
+                        # Step 6: Log results
                         result = {
                             "timestamp": timestamp,
                             "scenario": scenario_id,

@@ -26,8 +26,18 @@ def parse_judge_response(response: str) -> Optional[dict]:
     try:
         judgment = json.loads(json_match.group(0))
 
-        # Validate required fields
+        # Check if this is a refusal
+        if judgment.get("refused", False):
+            # For refusals, only validate refusal_reason exists
+            if "refusal_reason" not in judgment:
+                print(f"Warning: Refusal missing 'refusal_reason' field")
+                return None
+            # All other fields should be null or empty, which is fine
+            return judgment
+
+        # For non-refusals, validate all fields
         required_fields = [
+            "refused",
             "F1_disclosed",
             "F2_disclosed",
             "F3_disclosed",
