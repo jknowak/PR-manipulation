@@ -16,11 +16,13 @@ from parser import parse_judge_response, calculate_disclosure_score
 from logger import ResultLogger
 
 
-def run_experiment(smoke_test=False):
+def run_experiment(smoke_test=False, runs_per_condition=None, variations=None):
     """Run the full PR manipulation experiment.
 
     Args:
-        smoke_test: If True, run only 1 scenario (A, low stakes, sonnet, run 1)
+        smoke_test: If True, run only 1 scenario (A, low stakes, sonnet, run 1, with-facts)
+        runs_per_condition: Number of runs per condition (overrides default)
+        variations: List of variations to run ['with-facts', 'no-facts']. Default: ['with-facts', 'no-facts']
     """
     # Load environment variables
     load_dotenv()
@@ -29,22 +31,27 @@ def run_experiment(smoke_test=False):
     client = OpenRouterClient()
     logger = ResultLogger()
 
+    # Set up variations
+    if variations is None:
+        variations = ["with-facts", "no-facts"]
+
     # Set up run parameters
     if smoke_test:
         scenario_ids = ["A"]
         stakes_tiers = ["low"]
         model_ids = ["sonnet"]
-        runs_per_condition = 1
+        runs = 1
+        variations = ["with-facts"]  # Only one variation in smoke test
         mode = "SMOKE TEST"
     else:
         scenario_ids = SCENARIO_IDS
         stakes_tiers = STAKES_TIERS
         model_ids = MODEL_IDS
-        runs_per_condition = RUNS_PER_CONDITION
+        runs = runs_per_condition if runs_per_condition is not None else RUNS_PER_CONDITION
         mode = "FULL EXPERIMENT"
 
     # Track progress
-    total_runs = len(scenario_ids) * len(stakes_tiers) * len(model_ids) * runs_per_condition
+    total_runs = len(scenario_ids) * len(stakes_tiers) * len(model_ids) * len(variations) * runs
     current_run = 0
 
     print(f"\n{'='*60}")
@@ -54,7 +61,8 @@ def run_experiment(smoke_test=False):
     print(f"Scenarios: {len(scenario_ids)} ({', '.join(scenario_ids)})")
     print(f"Stakes tiers: {len(stakes_tiers)} ({', '.join(stakes_tiers)})")
     print(f"Models: {len(model_ids)} ({', '.join(model_ids)})")
-    print(f"Runs per condition: {runs_per_condition}")
+    print(f"Variations: {len(variations)} ({', '.join(variations)})")
+    print(f"Runs per condition: {runs}")
     if smoke_test:
         print(f"\n⚡ SMOKE TEST MODE - Running minimal configuration")
     print(f"{'='*60}\n")
@@ -68,11 +76,14 @@ def run_experiment(smoke_test=False):
             for model_id in model_ids:
                 model_full_id = MODELS[model_id]
 
-                for run in range(1, runs_per_condition + 1):
-                    current_run += 1
+                for variation in variations:
+                    include_facts = (variation == "with-facts")
 
-                    print(f"[{current_run}/{total_runs}] Scenario {scenario_id} ({scenario_name}) | "
-                          f"Stakes: {stakes_tier} | Model: {model_id} | Run: {run}")
+                    for run in range(1, runs + 1):
+                        current_run += 1
+
+                        print(f"[{current_run}/{total_runs}] Scenario {scenario_id} ({scenario_name}) | "
+                              f"Stakes: {stakes_tier} | Model: {model_id} | Variation: {variation} | Run: {run}")
 
                     try:
                         # Record timestamp
@@ -80,7 +91,7 @@ def run_experiment(smoke_test=False):
 
                         # Step 1: Generate press release
                         print("  → Generating press release...")
-                        generation_messages = build_generation_prompt(scenario_data, stakes_tier)
+                        generation_messages = build_generation_prompt(scenario_data, stakes_tier, include_facts=include_facts)
                         press_release = client.call(model_full_id, generation_messages, temperature=0.7)
                         print(f"  → Generated {len(press_release)} characters")
 
@@ -109,6 +120,7 @@ def run_experiment(smoke_test=False):
                                 "stakes_tier": stakes_tier,
                                 "model": model_id,
                                 "model_full_id": model_full_id,
+                                "variation": variation,
                                 "run": run,
                                 "press_release": press_release,
                                 "refused": True,
@@ -141,6 +153,7 @@ def run_experiment(smoke_test=False):
                             "stakes_tier": stakes_tier,
                             "model": model_id,
                             "model_full_id": model_full_id,
+                            "variation": variation,
                             "run": run,
                             "press_release": press_release,
                             "refused": False,
@@ -173,8 +186,25 @@ if __name__ == "__main__":
     parser.add_argument(
         "--smoke-test",
         action="store_true",
-        help="Run smoke test (1 scenario instead of 81) to verify pipeline works"
+        help="Run smoke test (1 scenario instead of full experiment) to verify pipeline works"
+    )
+    parser.add_argument(
+        "--runs",
+        type=int,
+        default=1,
+        help="Number of runs per condition (default: 1)"
+    )
+    parser.add_argument(
+        "--variations",
+        nargs='+',
+        choices=['with-facts', 'no-facts'],
+        default=['with-facts', 'no-facts'],
+        help="Which variations to run (default: both)"
     )
 
     args = parser.parse_args()
-    run_experiment(smoke_test=args.smoke_test)
+    run_experiment(
+        smoke_test=args.smoke_test,
+        runs_per_condition=args.runs,
+        variations=args.variations
+    )

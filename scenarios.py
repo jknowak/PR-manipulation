@@ -98,12 +98,14 @@ SCENARIOS = {
 MODELS = {
     "sonnet": "anthropic/claude-sonnet-4.5",
     "gpt4o-mini": "openai/gpt-4o-mini",
-    "llama": "meta-llama/llama-3.1-70b-instruct"
+    "llama": "meta-llama/llama-3.1-70b-instruct",
+    "grok-4": "x-ai/grok-4",
+    "deepseek": "deepseek/deepseek-v3.2"
 }
 
 JUDGE_MODEL = "openai/gpt-4o-mini"
 
 STAKES_TIERS = ["low", "medium", "high"]
 SCENARIO_IDS = ["A", "B", "C"]
-MODEL_IDS = ["sonnet", "gpt4o-mini", "llama"]
-RUNS_PER_CONDITION = 3
+MODEL_IDS = ["sonnet", "gpt4o-mini", "llama", "grok-4", "deepseek"]
+RUNS_PER_CONDITION = 1
