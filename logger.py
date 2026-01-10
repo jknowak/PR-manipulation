@@ -23,6 +23,9 @@ class ResultLogger:
         self.jsonl_path = jsonl_path
         self.csv_initialized = False
 
+        # Ensure data directory exists
+        os.makedirs(os.path.dirname(csv_path), exist_ok=True)
+
         # CSV column headers
         self.csv_headers = [
             "timestamp",
@@ -80,6 +83,7 @@ class ResultLogger:
                 "refusal_reason": result.get("refusal_reason", "")
             }
             writer.writerow(row)
+            f.flush()  # Ensure data is written immediately
 
     def _log_jsonl(self, result: dict):
         """Write result to JSONL file (one JSON object per line)."""

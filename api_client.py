@@ -8,6 +8,7 @@ import json
 import logging
 import requests
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from typing import Optional
 
 
@@ -38,11 +39,13 @@ class OpenRouterClient:
         fh = logging.FileHandler(log_file, mode='a', encoding='utf-8')
         fh.setLevel(logging.INFO)
 
-        # Create formatter
+        # Create formatter with Warsaw timezone (GMT+1)
         formatter = logging.Formatter(
             '%(asctime)s - %(levelname)s - %(message)s',
             datefmt='%Y-%m-%d %H:%M:%S'
         )
+        # Set formatter to use Warsaw timezone
+        formatter.converter = lambda *args: datetime.now(ZoneInfo('Europe/Warsaw')).timetuple()
         fh.setFormatter(formatter)
 
         # Add handler to logger
