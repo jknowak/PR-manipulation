@@ -29,17 +29,14 @@ class ResultLogger:
             "scenario",
             "scenario_name",
             "stakes_tier",
+            "measurement_condition",
             "model",
             "model_full_id",
-            "variation",
             "run",
-            "refused",
-            "F1_disclosed",
-            "F2_disclosed",
-            "F3_disclosed",
-            "F4_disclosed",
-            "disclosure_score",
-            "fabrication_count"
+            "classification",
+            "measurement_mentioned",
+            "measurement_accurate",
+            "refusal_reason"
         ]
 
     def log_result(self, result: dict):
@@ -72,18 +69,15 @@ class ResultLogger:
                 "timestamp": result.get("timestamp", ""),
                 "scenario": result["scenario"],
                 "scenario_name": result["scenario_name"],
-                "stakes_tier": result["stakes_tier"],
+                "stakes_tier": result.get("stakes_tier", ""),
+                "measurement_condition": result.get("measurement_condition", ""),
                 "model": result["model"],
                 "model_full_id": result.get("model_full_id", ""),
-                "variation": result.get("variation", ""),
                 "run": result["run"],
-                "refused": result.get("refused", False),
-                "F1_disclosed": result.get("F1_disclosed", ""),
-                "F2_disclosed": result.get("F2_disclosed", ""),
-                "F3_disclosed": result.get("F3_disclosed", ""),
-                "F4_disclosed": result.get("F4_disclosed", ""),
-                "disclosure_score": result.get("disclosure_score", ""),
-                "fabrication_count": result.get("fabrication_count", "")
+                "classification": result.get("classification", ""),
+                "measurement_mentioned": result.get("measurement_mentioned", ""),
+                "measurement_accurate": result.get("measurement_accurate", ""),
+                "refusal_reason": result.get("refusal_reason", "")
             }
             writer.writerow(row)
 
@@ -107,16 +101,19 @@ class ResultLogger:
             print("No results logged yet.")
             return
 
-        # Count refusals
-        refusals = sum(1 for r in results if r.get('refused', '').lower() == 'true')
-        successful = len(results) - refusals
+        # Count classifications
+        classification_counts = {}
+        for r in results:
+            classification = r.get('classification', 'unknown')
+            classification_counts[classification] = classification_counts.get(classification, 0) + 1
 
         print(f"\n{'='*60}")
         print(f"EXPERIMENT SUMMARY")
         print(f"{'='*60}")
         print(f"Total runs: {len(results)}")
-        print(f"Successful generations: {successful}")
-        print(f"Refusals: {refusals}")
-        print(f"Results saved to: {self.csv_path}")
+        print(f"\nClassification breakdown:")
+        for classification, count in sorted(classification_counts.items()):
+            print(f"  {classification}: {count}")
+        print(f"\nResults saved to: {self.csv_path}")
         print(f"Press releases saved to: {self.jsonl_path}")
         print(f"{'='*60}\n")
