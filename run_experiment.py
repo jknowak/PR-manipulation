@@ -85,34 +85,67 @@ def run_experiment(smoke_test=False, runs_per_condition=None, variations=None):
                         print(f"[{current_run}/{total_runs}] Scenario {scenario_id} ({scenario_name}) | "
                               f"Stakes: {stakes_tier} | Model: {model_id} | Variation: {variation} | Run: {run}")
 
-                    try:
-                        # Record timestamp
-                        timestamp = datetime.now().isoformat()
+                        try:
+                            # Record timestamp
+                            timestamp = datetime.now().isoformat()
 
-                        # Step 1: Generate press release
-                        print("  → Generating press release...")
-                        generation_messages = build_generation_prompt(scenario_data, stakes_tier, include_facts=include_facts)
-                        press_release = client.call(model_full_id, generation_messages, temperature=0.7)
-                        print(f"  → Generated {len(press_release)} characters")
+                            # Step 1: Generate press release
+                            print("  → Generating press release...")
+                            generation_messages = build_generation_prompt(scenario_data, stakes_tier, include_facts=include_facts)
+                            press_release = client.call(model_full_id, generation_messages, temperature=0.5)
+                            print(f"  → Generated {len(press_release)} characters")
 
-                        # Step 2: Judge the press release (includes refusal detection)
-                        print("  → Judging press release...")
-                        judge_messages = build_judge_prompt(scenario_data, press_release, include_facts=include_facts)
-                        judge_response = client.call(JUDGE_MODEL, judge_messages, temperature=0.0)
+                            # Step 2: Judge the press release (includes refusal detection)
+                            print("  → Judging press release...")
+                            judge_messages = build_judge_prompt(scenario_data, press_release, include_facts=include_facts)
+                            judge_response = client.call(JUDGE_MODEL, judge_messages, temperature=0.0)
 
-                        # Step 3: Parse judgment
-                        judgment = parse_judge_response(judge_response)
+                            # Step 3: Parse judgment
+                            judgment = parse_judge_response(judge_response)
 
-                        if judgment is None:
-                            print("  ✗ Failed to parse judgment, skipping...")
-                            continue
+                            if judgment is None:
+                                print("  ✗ Failed to parse judgment, skipping...")
+                                continue
 
-                        # Step 4: Handle refusals vs. actual press releases
-                        if judgment.get("refused", False):
-                            # Model refused to generate
-                            refusal_reason = judgment.get("refusal_reason", "Unknown reason")
-                            print(f"  ✗ Model refused to generate: {refusal_reason}")
+                            # Step 4: Handle refusals vs. actual press releases
+                            if judgment.get("refused", False):
+                                # Model refused to generate
+                                refusal_reason = judgment.get("refusal_reason", "Unknown reason")
+                                print(f"  ✗ Model refused to generate: {refusal_reason}")
 
+                                result = {
+                                    "timestamp": timestamp,
+                                    "scenario": scenario_id,
+                                    "scenario_name": scenario_name,
+                                    "stakes_tier": stakes_tier,
+                                    "model": model_id,
+                                    "model_full_id": model_full_id,
+                                    "variation": variation,
+                                    "run": run,
+                                    "press_release": press_release,
+                                    "refused": True,
+                                    "refusal_reason": refusal_reason,
+                                    "F1_disclosed": None,
+                                    "F2_disclosed": None,
+                                    "F3_disclosed": None,
+                                    "F4_disclosed": None,
+                                    "disclosure_score": None,
+                                    "fabrication_count": None,
+                                    "fabrications": []
+                                }
+                                logger.log_result(result)
+                                print()
+                                continue
+
+                            # Step 5: Verify disclosure score matches individual facts (for non-refusals)
+                            calculated_score = calculate_disclosure_score(judgment)
+                            if abs(calculated_score - judgment["disclosure_score"]) > 0.01:
+                                print(f"  ! Warning: Disclosure score mismatch "
+                                      f"(calculated: {calculated_score}, reported: {judgment['disclosure_score']})")
+                                # Use calculated score
+                                judgment["disclosure_score"] = calculated_score
+
+                            # Step 6: Log results
                             result = {
                                 "timestamp": timestamp,
                                 "scenario": scenario_id,
@@ -123,56 +156,23 @@ def run_experiment(smoke_test=False, runs_per_condition=None, variations=None):
                                 "variation": variation,
                                 "run": run,
                                 "press_release": press_release,
-                                "refused": True,
-                                "refusal_reason": refusal_reason,
-                                "F1_disclosed": None,
-                                "F2_disclosed": None,
-                                "F3_disclosed": None,
-                                "F4_disclosed": None,
-                                "disclosure_score": None,
-                                "fabrication_count": None,
-                                "fabrications": []
+                                "refused": False,
+                                "F1_disclosed": judgment["F1_disclosed"],
+                                "F2_disclosed": judgment["F2_disclosed"],
+                                "F3_disclosed": judgment["F3_disclosed"],
+                                "F4_disclosed": judgment["F4_disclosed"],
+                                "disclosure_score": judgment["disclosure_score"],
+                                "fabrication_count": judgment["fabrication_count"],
+                                "fabrications": judgment["fabrications"]
                             }
+
                             logger.log_result(result)
-                            print()
+                            print(f"  ✓ Disclosure: {judgment['disclosure_score']:.2f} | "
+                                  f"Fabrications: {judgment['fabrication_count']}\n")
+
+                        except Exception as e:
+                            print(f"  ✗ Error: {e}\n")
                             continue
-
-                        # Step 5: Verify disclosure score matches individual facts (for non-refusals)
-                        calculated_score = calculate_disclosure_score(judgment)
-                        if abs(calculated_score - judgment["disclosure_score"]) > 0.01:
-                            print(f"  ! Warning: Disclosure score mismatch "
-                                  f"(calculated: {calculated_score}, reported: {judgment['disclosure_score']})")
-                            # Use calculated score
-                            judgment["disclosure_score"] = calculated_score
-
-                        # Step 6: Log results
-                        result = {
-                            "timestamp": timestamp,
-                            "scenario": scenario_id,
-                            "scenario_name": scenario_name,
-                            "stakes_tier": stakes_tier,
-                            "model": model_id,
-                            "model_full_id": model_full_id,
-                            "variation": variation,
-                            "run": run,
-                            "press_release": press_release,
-                            "refused": False,
-                            "F1_disclosed": judgment["F1_disclosed"],
-                            "F2_disclosed": judgment["F2_disclosed"],
-                            "F3_disclosed": judgment["F3_disclosed"],
-                            "F4_disclosed": judgment["F4_disclosed"],
-                            "disclosure_score": judgment["disclosure_score"],
-                            "fabrication_count": judgment["fabrication_count"],
-                            "fabrications": judgment["fabrications"]
-                        }
-
-                        logger.log_result(result)
-                        print(f"  ✓ Disclosure: {judgment['disclosure_score']:.2f} | "
-                              f"Fabrications: {judgment['fabrication_count']}\n")
-
-                    except Exception as e:
-                        print(f"  ✗ Error: {e}\n")
-                        continue
 
     # Print final summary
     logger.print_summary()
