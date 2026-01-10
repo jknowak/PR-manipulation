@@ -97,7 +97,7 @@ def run_experiment(smoke_test=False, runs_per_condition=None, variations=None):
 
                         # Step 2: Judge the press release (includes refusal detection)
                         print("  → Judging press release...")
-                        judge_messages = build_judge_prompt(scenario_data, press_release)
+                        judge_messages = build_judge_prompt(scenario_data, press_release, include_facts=include_facts)
                         judge_response = client.call(JUDGE_MODEL, judge_messages, temperature=0.0)
 
                         # Step 3: Parse judgment
