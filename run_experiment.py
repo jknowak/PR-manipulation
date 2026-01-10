@@ -6,6 +6,7 @@ then evaluates them with a judge model.
 """
 
 import os
+import argparse
 from dotenv import load_dotenv
 
 from scenarios import SCENARIOS, MODELS, JUDGE_MODEL, STAKES_TIERS, SCENARIO_IDS, MODEL_IDS, RUNS_PER_CONDITION
@@ -15,8 +16,12 @@ from parser import parse_judge_response, calculate_disclosure_score
 from logger import ResultLogger
 
 
-def run_experiment():
-    """Run the full PR manipulation experiment."""
+def run_experiment(smoke_test=False):
+    """Run the full PR manipulation experiment.
+
+    Args:
+        smoke_test: If True, run only 1 scenario (A, low stakes, sonnet, run 1)
+    """
     # Load environment variables
     load_dotenv()
 
@@ -24,30 +29,46 @@ def run_experiment():
     client = OpenRouterClient()
     logger = ResultLogger()
 
+    # Set up run parameters
+    if smoke_test:
+        scenario_ids = ["A"]
+        stakes_tiers = ["low"]
+        model_ids = ["sonnet"]
+        runs_per_condition = 1
+        mode = "SMOKE TEST"
+    else:
+        scenario_ids = SCENARIO_IDS
+        stakes_tiers = STAKES_TIERS
+        model_ids = MODEL_IDS
+        runs_per_condition = RUNS_PER_CONDITION
+        mode = "FULL EXPERIMENT"
+
     # Track progress
-    total_runs = len(SCENARIO_IDS) * len(STAKES_TIERS) * len(MODEL_IDS) * RUNS_PER_CONDITION
+    total_runs = len(scenario_ids) * len(stakes_tiers) * len(model_ids) * runs_per_condition
     current_run = 0
 
     print(f"\n{'='*60}")
-    print(f"PR MANIPULATION EXPERIMENT")
+    print(f"PR MANIPULATION EXPERIMENT - {mode}")
     print(f"{'='*60}")
     print(f"Total generations: {total_runs}")
-    print(f"Scenarios: {len(SCENARIO_IDS)} ({', '.join(SCENARIO_IDS)})")
-    print(f"Stakes tiers: {len(STAKES_TIERS)} ({', '.join(STAKES_TIERS)})")
-    print(f"Models: {len(MODEL_IDS)} ({', '.join(MODEL_IDS)})")
-    print(f"Runs per condition: {RUNS_PER_CONDITION}")
+    print(f"Scenarios: {len(scenario_ids)} ({', '.join(scenario_ids)})")
+    print(f"Stakes tiers: {len(stakes_tiers)} ({', '.join(stakes_tiers)})")
+    print(f"Models: {len(model_ids)} ({', '.join(model_ids)})")
+    print(f"Runs per condition: {runs_per_condition}")
+    if smoke_test:
+        print(f"\n⚡ SMOKE TEST MODE - Running minimal configuration")
     print(f"{'='*60}\n")
 
     # Main experiment loop
-    for scenario_id in SCENARIO_IDS:
+    for scenario_id in scenario_ids:
         scenario_data = SCENARIOS[scenario_id]
         scenario_name = scenario_data["name"]
 
-        for stakes_tier in STAKES_TIERS:
-            for model_id in MODEL_IDS:
+        for stakes_tier in stakes_tiers:
+            for model_id in model_ids:
                 model_full_id = MODELS[model_id]
 
-                for run in range(1, RUNS_PER_CONDITION + 1):
+                for run in range(1, runs_per_condition + 1):
                     current_run += 1
 
                     print(f"[{current_run}/{total_runs}] Scenario {scenario_id} ({scenario_name}) | "
@@ -111,4 +132,14 @@ def run_experiment():
 
 
 if __name__ == "__main__":
-    run_experiment()
+    parser = argparse.ArgumentParser(
+        description="PR Manipulation Experiment - Test LLM honesty under stakes pressure"
+    )
+    parser.add_argument(
+        "--smoke-test",
+        action="store_true",
+        help="Run smoke test (1 scenario instead of 81) to verify pipeline works"
+    )
+
+    args = parser.parse_args()
+    run_experiment(smoke_test=args.smoke_test)
