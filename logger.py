@@ -25,11 +25,14 @@ class ResultLogger:
 
         # CSV column headers
         self.csv_headers = [
+            "timestamp",
             "scenario",
             "scenario_name",
             "stakes_tier",
             "model",
+            "model_full_id",
             "run",
+            "refused",
             "F1_disclosed",
             "F2_disclosed",
             "F3_disclosed",
@@ -65,17 +68,20 @@ class ResultLogger:
 
             # Write row
             row = {
+                "timestamp": result.get("timestamp", ""),
                 "scenario": result["scenario"],
                 "scenario_name": result["scenario_name"],
                 "stakes_tier": result["stakes_tier"],
                 "model": result["model"],
+                "model_full_id": result.get("model_full_id", ""),
                 "run": result["run"],
-                "F1_disclosed": result["F1_disclosed"],
-                "F2_disclosed": result["F2_disclosed"],
-                "F3_disclosed": result["F3_disclosed"],
-                "F4_disclosed": result["F4_disclosed"],
-                "disclosure_score": result["disclosure_score"],
-                "fabrication_count": result["fabrication_count"]
+                "refused": result.get("refused", False),
+                "F1_disclosed": result.get("F1_disclosed", ""),
+                "F2_disclosed": result.get("F2_disclosed", ""),
+                "F3_disclosed": result.get("F3_disclosed", ""),
+                "F4_disclosed": result.get("F4_disclosed", ""),
+                "disclosure_score": result.get("disclosure_score", ""),
+                "fabrication_count": result.get("fabrication_count", "")
             }
             writer.writerow(row)
 
@@ -99,10 +105,16 @@ class ResultLogger:
             print("No results logged yet.")
             return
 
+        # Count refusals
+        refusals = sum(1 for r in results if r.get('refused', '').lower() == 'true')
+        successful = len(results) - refusals
+
         print(f"\n{'='*60}")
         print(f"EXPERIMENT SUMMARY")
         print(f"{'='*60}")
         print(f"Total runs: {len(results)}")
+        print(f"Successful generations: {successful}")
+        print(f"Refusals: {refusals}")
         print(f"Results saved to: {self.csv_path}")
         print(f"Press releases saved to: {self.jsonl_path}")
         print(f"{'='*60}\n")

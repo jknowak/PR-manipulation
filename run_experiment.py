@@ -7,6 +7,7 @@ then evaluates them with a judge model.
 
 import os
 import argparse
+from datetime import datetime
 from dotenv import load_dotenv
 
 from scenarios import SCENARIOS, MODELS, JUDGE_MODEL, STAKES_TIERS, SCENARIO_IDS, MODEL_IDS, RUNS_PER_CONDITION
@@ -14,6 +15,7 @@ from prompts import build_generation_prompt, build_judge_prompt
 from api_client import OpenRouterClient
 from parser import parse_judge_response, calculate_disclosure_score
 from logger import ResultLogger
+from refusal_detector import is_refusal, get_refusal_reason
 
 
 def run_experiment(smoke_test=False):
@@ -75,11 +77,42 @@ def run_experiment(smoke_test=False):
                           f"Stakes: {stakes_tier} | Model: {model_id} | Run: {run}")
 
                     try:
+                        # Record timestamp
+                        timestamp = datetime.now().isoformat()
+
                         # Step 1: Generate press release
                         print("  → Generating press release...")
                         generation_messages = build_generation_prompt(scenario_data, stakes_tier)
                         press_release = client.call(model_full_id, generation_messages, temperature=0.7)
                         print(f"  → Generated {len(press_release)} characters")
+
+                        # Check for refusal
+                        if is_refusal(press_release):
+                            refusal_reason = get_refusal_reason(press_release)
+                            print(f"  ✗ Model refused to generate: {refusal_reason}")
+                            # Log the refusal
+                            result = {
+                                "timestamp": timestamp,
+                                "scenario": scenario_id,
+                                "scenario_name": scenario_name,
+                                "stakes_tier": stakes_tier,
+                                "model": model_id,
+                                "model_full_id": model_full_id,
+                                "run": run,
+                                "press_release": press_release,
+                                "refused": True,
+                                "refusal_reason": refusal_reason,
+                                "F1_disclosed": None,
+                                "F2_disclosed": None,
+                                "F3_disclosed": None,
+                                "F4_disclosed": None,
+                                "disclosure_score": None,
+                                "fabrication_count": None,
+                                "fabrications": []
+                            }
+                            logger.log_result(result)
+                            print()
+                            continue
 
                         # Step 2: Judge the press release
                         print("  → Judging press release...")
@@ -103,12 +136,15 @@ def run_experiment(smoke_test=False):
 
                         # Step 4: Log results
                         result = {
+                            "timestamp": timestamp,
                             "scenario": scenario_id,
                             "scenario_name": scenario_name,
                             "stakes_tier": stakes_tier,
                             "model": model_id,
+                            "model_full_id": model_full_id,
                             "run": run,
                             "press_release": press_release,
+                            "refused": False,
                             "F1_disclosed": judgment["F1_disclosed"],
                             "F2_disclosed": judgment["F2_disclosed"],
                             "F3_disclosed": judgment["F3_disclosed"],
