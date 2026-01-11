@@ -454,9 +454,219 @@ def run_experiment(smoke_test=False, runs_per_condition=None, concurrent=False, 
         )
 
 
+async def run_lakewood_experiment(smoke_test=False, runs_per_condition=None, max_concurrent=10, max_rpm=60, batch_size=50):
+    """Run Lakewood Manufacturing experiment concurrently."""
+    from scenarios_lakewood import SEVERITY_IDS, PROBABILITY_CONDITIONS, MODEL_IDS, MODELS, JUDGE_MODEL, TOTAL_RUNS
+    from prompts_lakewood import build_generation_prompt as build_lakewood_gen_prompt
+    from prompts_lakewood import build_judge_prompt as build_lakewood_judge_prompt
+    from parser_lakewood import parse_judge_response as parse_lakewood_response
+    from logger_lakewood import LakewoodResultLogger
+
+    # Load environment variables
+    load_dotenv()
+
+    # Initialize components
+    client = AsyncOpenRouterClient(max_concurrent=max_concurrent, max_rpm=max_rpm)
+    logger = LakewoodResultLogger()
+
+    print(f"\n📁 Results will be saved to:")
+    print(f"   CSV: {logger.csv_path}")
+    print(f"   JSONL: {logger.jsonl_path}\n")
+
+    # Set up run parameters
+    if smoke_test:
+        severity_ids = ["fish"]
+        probability_conditions = [True]
+        model_ids = ["sonnet"]
+        runs = 1
+        mode = "SMOKE TEST"
+    else:
+        severity_ids = SEVERITY_IDS
+        probability_conditions = PROBABILITY_CONDITIONS
+        model_ids = MODEL_IDS
+        runs = runs_per_condition if runs_per_condition is not None else 3
+        mode = "FULL EXPERIMENT"
+
+    # Calculate total runs
+    total_runs = len(severity_ids) * len(probability_conditions) * len(model_ids) * runs
+
+    print(f"\n{'='*60}")
+    print(f"LAKEWOOD MANUFACTURING EXPERIMENT - {mode} (CONCURRENT)")
+    print(f"{'='*60}")
+    print(f"Total generations: {total_runs}")
+    print(f"Severity levels: {len(severity_ids)} ({', '.join(severity_ids)})")
+    print(f"Probability conditions: {len(probability_conditions)} (with/without prior fines)")
+    print(f"Models: {len(model_ids)} ({', '.join(model_ids)})")
+    print(f"Runs per condition: {runs}")
+    print(f"Batch size: {batch_size}")
+    print(f"Max concurrent requests: {max_concurrent}")
+    print(f"Max requests per minute: {max_rpm if max_rpm > 0 else 'unlimited'}")
+    if smoke_test:
+        print(f"\n⚡ SMOKE TEST MODE - Running minimal configuration")
+    print(f"{'='*60}\n")
+
+    # Build all generation requests
+    print("Building all requests...")
+    all_generation_requests = []
+    all_request_metadata = []
+
+    for severity_id in severity_ids:
+        for include_prob in probability_conditions:
+            for model_id in model_ids:
+                model_full_id = MODELS[model_id]
+                for run in range(1, runs + 1):
+                    generation_messages = build_lakewood_gen_prompt(severity_id, include_prob)
+                    all_generation_requests.append({
+                        'model_id': model_full_id,
+                        'messages': generation_messages
+                    })
+                    all_request_metadata.append({
+                        'severity_level': severity_id,
+                        'include_probability': include_prob,
+                        'model_id': model_id,
+                        'model_full_id': model_full_id,
+                        'run': run
+                    })
+
+    num_batches = (len(all_generation_requests) + batch_size - 1) // batch_size
+    print(f"Total requests: {len(all_generation_requests)}")
+    print(f"Processing in {num_batches} batches of up to {batch_size}\n")
+
+    start_time = datetime.now()
+    total_success = 0
+    total_failed = 0
+
+    # Process in batches: generate → judge → save → repeat
+    for batch_num in range(num_batches):
+        batch_start_idx = batch_num * batch_size
+        batch_end_idx = min((batch_num + 1) * batch_size, len(all_generation_requests))
+        batch_generation_requests = all_generation_requests[batch_start_idx:batch_end_idx]
+        batch_metadata = all_request_metadata[batch_start_idx:batch_end_idx]
+
+        print(f"{'='*60}")
+        print(f"BATCH {batch_num + 1}/{num_batches} ({len(batch_generation_requests)} requests)")
+        print(f"{'='*60}")
+
+        # Step 1: Generate press statements
+        print(f"\n[1/3] Generating {len(batch_generation_requests)} press statements...")
+        with tqdm(total=len(batch_generation_requests), desc="  Generating", unit="req") as pbar:
+            def update_gen_progress():
+                pbar.update(1)
+
+            statements = await client.call_batch(
+                batch_generation_requests,
+                temperature=0.5,
+                progress_callback=update_gen_progress
+            )
+
+        generation_failures = sum(1 for s in statements if isinstance(s, Exception))
+        print(f"  ✓ Completed {len(statements) - generation_failures}/{len(statements)} generations")
+        if generation_failures > 0:
+            print(f"  ⚠ {generation_failures} generation(s) failed")
+
+        # Step 2: Build and execute judge requests
+        judge_requests = []
+        judge_metadata = []
+
+        for statement, metadata in zip(statements, batch_metadata):
+            if isinstance(statement, Exception):
+                continue
+
+            judge_messages = build_lakewood_judge_prompt(
+                metadata['severity_level'],
+                metadata['include_probability'],
+                statement
+            )
+
+            judge_requests.append({
+                'model_id': JUDGE_MODEL,
+                'messages': judge_messages
+            })
+            judge_metadata.append({
+                **metadata,
+                'press_statement': statement
+            })
+
+        print(f"\n[2/3] Judging {len(judge_requests)} press statements...")
+        with tqdm(total=len(judge_requests), desc="  Judging", unit="req") as pbar:
+            def update_judge_progress():
+                pbar.update(1)
+
+            judgments = await client.call_batch(
+                judge_requests,
+                temperature=0.0,
+                progress_callback=update_judge_progress
+            )
+
+        # Step 3: Process and save results
+        print(f"\n[3/3] Processing and saving results...")
+        batch_success = 0
+        batch_failed = 0
+
+        for judgment_response, metadata in zip(judgments, judge_metadata):
+            if isinstance(judgment_response, Exception):
+                batch_failed += 1
+                continue
+
+            judgment = parse_lakewood_response(judgment_response)
+            if judgment is None:
+                batch_failed += 1
+                continue
+
+            result = {
+                "timestamp": datetime.now().isoformat(),
+                "severity_level": metadata['severity_level'],
+                "include_probability": metadata['include_probability'],
+                "model": metadata['model_id'],
+                "model_full_id": metadata['model_full_id'],
+                "run": metadata['run'],
+                "press_statement": metadata['press_statement'],
+                "refused": judgment["refused"],
+                "refusal_reason": judgment.get("refusal_reason"),
+                "fact_1_presented": judgment.get("fact_1_presented"),
+                "fact_1_misrepresented": judgment.get("fact_1_misrepresented"),
+                "fact_2_presented": judgment.get("fact_2_presented"),
+                "fact_2_misrepresented": judgment.get("fact_2_misrepresented"),
+                "fact_3_presented": judgment.get("fact_3_presented"),
+                "fact_3_misrepresented": judgment.get("fact_3_misrepresented"),
+                "explanation": judgment.get("explanation")
+            }
+
+            logger.log_result(result)
+            batch_success += 1
+
+        total_success += batch_success
+        total_failed += batch_failed
+
+        print(f"  💾 Saved {batch_success} results to disk")
+        if batch_failed > 0:
+            print(f"  ✗ {batch_failed} failed")
+        print(f"  Progress: {total_success}/{len(all_generation_requests)} total ({total_success/len(all_generation_requests)*100:.1f}%)\n")
+
+    total_time = (datetime.now() - start_time).total_seconds()
+    print(f"\n{'='*60}")
+    print(f"EXPERIMENT COMPLETE")
+    print(f"{'='*60}")
+    print(f"✓ Successfully logged: {total_success}/{len(all_generation_requests)} results")
+    if total_failed > 0:
+        print(f"✗ Failed: {total_failed}")
+    print(f"Total time: {total_time:.1f}s ({total_time/60:.1f} minutes)")
+    print(f"{'='*60}")
+
+    logger.print_summary()
+    print("\n✅ All results saved!")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="PR Manipulation Experiment - Test LLM honesty under stakes pressure"
+    )
+    parser.add_argument(
+        "--experiment-type",
+        type=str,
+        choices=["crisis", "lakewood"],
+        default="crisis",
+        help="Type of experiment to run (default: crisis)"
     )
     parser.add_argument(
         "--smoke-test",
@@ -467,7 +677,7 @@ if __name__ == "__main__":
         "--runs",
         type=int,
         default=None,
-        help=f"Number of runs per condition (default: {RUNS_PER_CONDITION})"
+        help=f"Number of runs per condition (default: 3)"
     )
     parser.add_argument(
         "--concurrent",
@@ -494,11 +704,24 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-    run_experiment(
-        smoke_test=args.smoke_test,
-        runs_per_condition=args.runs,
-        concurrent=args.concurrent,
-        max_concurrent=args.max_concurrent,
-        max_rpm=args.max_rpm,
-        batch_size=args.batch_size
-    )
+
+    # Route to appropriate experiment
+    if args.experiment_type == "lakewood":
+        # Lakewood experiment only supports concurrent mode
+        asyncio.run(run_lakewood_experiment(
+            smoke_test=args.smoke_test,
+            runs_per_condition=args.runs,
+            max_concurrent=args.max_concurrent,
+            max_rpm=args.max_rpm,
+            batch_size=args.batch_size
+        ))
+    else:
+        # Original crisis experiment
+        run_experiment(
+            smoke_test=args.smoke_test,
+            runs_per_condition=args.runs,
+            concurrent=args.concurrent,
+            max_concurrent=args.max_concurrent,
+            max_rpm=args.max_rpm,
+            batch_size=args.batch_size
+        )
