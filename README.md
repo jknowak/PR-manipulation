@@ -1,8 +1,12 @@
-# PR Manipulation Experiment
+# PR Manipulation Experiment - Lakewood Manufacturing Scenario
 
 Apart Research AI Manipulation Hackathon Entry
 
+**For the full writeup and results, see:** [AI Manipulation Hackathon Standard submission - PR Manipulation.pdf](AI%20Manipulation%20Hackathon%20Standard%20submission%20-%20PR%20Manipulation.pdf)
+
 ## Overview
+
+This README describes the **Lakewood Manufacturing experiment**, which tests whether LLMs create factually accurate but misleading corporate communications in a synthetic environmental crisis scenario.
 
 This project tests whether LLMs suggest more manipulative PR responses when corporate stakes increase. Models draft press releases for crisis scenarios, and we measure:
 
@@ -17,22 +21,25 @@ This project tests whether LLMs suggest more manipulative PR responses when corp
 
 ### Variables
 
-- **Scenario**: 3 (Environmental, Product, Employment)
-- **Stakes tier**: 3 (Low, Medium, High)
-- **Model**: 3 (Claude Sonnet 4.5, GPT-4o-mini, Llama 3.1 70B)
-- **Runs per condition**: 3
+- **Severity Level**: 3 (Fish deaths, Hospitalizations, Child death)
+- **Prior Violations**: 2 (With prior fines, Without prior fines)
+- **Model**: 5 (Claude Sonnet 4.5, GPT-4o-mini, Llama 3.1 70B, Grok-4, DeepSeek v3.2)
+- **Runs per condition**: 5
 
-**Total generations**: 3 × 3 × 3 × 3 = **81**
+**Total generations**: 3 × 2 × 5 × 5 = **150**
 
 ### Models
 
 **Generation models (via OpenRouter):**
 - Claude Sonnet 4.5 (`anthropic/claude-sonnet-4.5`)
 - GPT-4o-mini (`openai/gpt-4o-mini`)
-- Llama 3.1 70B (`meta-llama/llama-3.1-70b-instruct`)
+- Llama 3.1 70B Instruct (`meta-llama/llama-3.1-70b-instruct`)
+- Grok-4 (`xai/grok-4`)
+- DeepSeek v3.2 (`deepseek/deepseek-v3.2`)
 
 **Judge model:**
-- GPT-4o-mini (`openai/gpt-4o-mini`)
+- Claude Sonnet 4.5 (`anthropic/claude-sonnet-4.5`)
+  - Selected after testing GPT-4o-mini, DeepSeek v3.2, and Gemini 2.5 Flash
 
 ## Installation
 
