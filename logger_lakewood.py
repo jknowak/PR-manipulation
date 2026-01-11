@@ -37,14 +37,24 @@ class LakewoodResultLogger:
             "model",
             "model_full_id",
             "run",
-            "refused",
-            "refusal_reason",
-            "fact_1_presented",
-            "fact_1_misrepresented",
-            "fact_2_presented",
-            "fact_2_misrepresented",
-            "fact_3_presented",
-            "fact_3_misrepresented"
+            # Gemini 2.5 Flash judge results
+            "refused_gemini",
+            "refusal_reason_gemini",
+            "fact_1_presented_gemini",
+            "fact_1_misrepresented_gemini",
+            "fact_2_presented_gemini",
+            "fact_2_misrepresented_gemini",
+            "fact_3_presented_gemini",
+            "fact_3_misrepresented_gemini",
+            # Sonnet 4.5 judge results
+            "refused_sonnet",
+            "refusal_reason_sonnet",
+            "fact_1_presented_sonnet",
+            "fact_1_misrepresented_sonnet",
+            "fact_2_presented_sonnet",
+            "fact_2_misrepresented_sonnet",
+            "fact_3_presented_sonnet",
+            "fact_3_misrepresented_sonnet"
         ]
 
         with open(self.csv_path, 'w', newline='', encoding='utf-8') as f:
@@ -53,7 +63,7 @@ class LakewoodResultLogger:
 
     def log_result(self, result: dict):
         """
-        Log a single result.
+        Log a single result with dual judge evaluations.
 
         Args:
             result: Dictionary with result data
@@ -64,10 +74,15 @@ class LakewoodResultLogger:
         with open(self.csv_path, 'a', newline='', encoding='utf-8') as f:
             writer = csv.DictWriter(f, fieldnames=[
                 "timestamp", "severity_level", "include_probability",
-                "model", "model_full_id", "run", "refused", "refusal_reason",
-                "fact_1_presented", "fact_1_misrepresented",
-                "fact_2_presented", "fact_2_misrepresented",
-                "fact_3_presented", "fact_3_misrepresented"
+                "model", "model_full_id", "run",
+                "refused_gemini", "refusal_reason_gemini",
+                "fact_1_presented_gemini", "fact_1_misrepresented_gemini",
+                "fact_2_presented_gemini", "fact_2_misrepresented_gemini",
+                "fact_3_presented_gemini", "fact_3_misrepresented_gemini",
+                "refused_sonnet", "refusal_reason_sonnet",
+                "fact_1_presented_sonnet", "fact_1_misrepresented_sonnet",
+                "fact_2_presented_sonnet", "fact_2_misrepresented_sonnet",
+                "fact_3_presented_sonnet", "fact_3_misrepresented_sonnet"
             ])
             writer.writerow({
                 "timestamp": result["timestamp"],
@@ -76,14 +91,24 @@ class LakewoodResultLogger:
                 "model": result["model"],
                 "model_full_id": result["model_full_id"],
                 "run": result["run"],
-                "refused": result["refused"],
-                "refusal_reason": result.get("refusal_reason"),
-                "fact_1_presented": result.get("fact_1_presented"),
-                "fact_1_misrepresented": result.get("fact_1_misrepresented"),
-                "fact_2_presented": result.get("fact_2_presented"),
-                "fact_2_misrepresented": result.get("fact_2_misrepresented"),
-                "fact_3_presented": result.get("fact_3_presented"),
-                "fact_3_misrepresented": result.get("fact_3_misrepresented")
+                # Gemini judge
+                "refused_gemini": result.get("refused_gemini"),
+                "refusal_reason_gemini": result.get("refusal_reason_gemini"),
+                "fact_1_presented_gemini": result.get("fact_1_presented_gemini"),
+                "fact_1_misrepresented_gemini": result.get("fact_1_misrepresented_gemini"),
+                "fact_2_presented_gemini": result.get("fact_2_presented_gemini"),
+                "fact_2_misrepresented_gemini": result.get("fact_2_misrepresented_gemini"),
+                "fact_3_presented_gemini": result.get("fact_3_presented_gemini"),
+                "fact_3_misrepresented_gemini": result.get("fact_3_misrepresented_gemini"),
+                # Sonnet judge
+                "refused_sonnet": result.get("refused_sonnet"),
+                "refusal_reason_sonnet": result.get("refusal_reason_sonnet"),
+                "fact_1_presented_sonnet": result.get("fact_1_presented_sonnet"),
+                "fact_1_misrepresented_sonnet": result.get("fact_1_misrepresented_sonnet"),
+                "fact_2_presented_sonnet": result.get("fact_2_presented_sonnet"),
+                "fact_2_misrepresented_sonnet": result.get("fact_2_misrepresented_sonnet"),
+                "fact_3_presented_sonnet": result.get("fact_3_presented_sonnet"),
+                "fact_3_misrepresented_sonnet": result.get("fact_3_misrepresented_sonnet")
             })
 
         # Append to JSONL (includes full press statement)
@@ -91,43 +116,50 @@ class LakewoodResultLogger:
             f.write(json.dumps(result, ensure_ascii=False) + '\n')
 
     def print_summary(self):
-        """Print experiment summary."""
+        """Print experiment summary with dual judge stats."""
         if not self.results:
             print("No results logged yet.")
             return
 
         total = len(self.results)
-        refused = sum(1 for r in self.results if r["refused"])
-        non_refused = total - refused
+        # Note: refusals now tracked per judge
+        refused_gemini = sum(1 for r in self.results if r.get("refused_gemini"))
+        refused_sonnet = sum(1 for r in self.results if r.get("refused_sonnet"))
 
         print(f"\n{'='*60}")
-        print(f"LAKEWOOD EXPERIMENT SUMMARY")
+        print(f"LAKEWOOD EXPERIMENT SUMMARY (DUAL JUDGE)")
         print(f"{'='*60}")
         print(f"Total runs: {total}")
-        print(f"Successful generations: {non_refused}")
-        print(f"Refusals: {refused}")
+        print(f"Refusals detected by Gemini 2.5 Flash: {refused_gemini}")
+        print(f"Refusals detected by Sonnet 4.5: {refused_sonnet}")
 
-        if non_refused > 0:
+        # Print stats for both judges
+        for judge_name, suffix in [("Gemini 2.5 Flash", "gemini"), ("Sonnet 4.5", "sonnet")]:
+            print(f"\n{'='*60}")
+            print(f"JUDGE: {judge_name}")
+            print(f"{'='*60}")
+
             # Calculate fact presentation rates
-            fact_1_presented = sum(1 for r in self.results if r.get("fact_1_presented") is True)
-            fact_2_presented = sum(1 for r in self.results if r.get("fact_2_presented") is True)
-            fact_3_presented = sum(1 for r in self.results if r.get("fact_3_presented") is True)
+            fact_1_presented = sum(1 for r in self.results if r.get(f"fact_1_presented_{suffix}") is True)
+            fact_2_presented = sum(1 for r in self.results if r.get(f"fact_2_presented_{suffix}") is True)
+            fact_3_presented = sum(1 for r in self.results if r.get(f"fact_3_presented_{suffix}") is True)
 
             fact_1_misrep = sum(1 for r in self.results
-                               if r.get("fact_1_presented") and r.get("fact_1_misrepresented"))
+                               if r.get(f"fact_1_presented_{suffix}") and r.get(f"fact_1_misrepresented_{suffix}"))
             fact_2_misrep = sum(1 for r in self.results
-                               if r.get("fact_2_presented") and r.get("fact_2_misrepresented"))
+                               if r.get(f"fact_2_presented_{suffix}") and r.get(f"fact_2_misrepresented_{suffix}"))
             fact_3_misrep = sum(1 for r in self.results
-                               if r.get("fact_3_presented") and r.get("fact_3_misrepresented"))
+                               if r.get(f"fact_3_presented_{suffix}") and r.get(f"fact_3_misrepresented_{suffix}"))
 
-            print(f"\nFact Presentation (out of {non_refused} non-refusals):")
-            print(f"  Fact 1 (Director Praise): {fact_1_presented} ({fact_1_presented/non_refused*100:.1f}%)")
+            print(f"Fact Presentation (out of {total} total):")
+            print(f"  Fact 1 (Director Praise): {fact_1_presented} ({fact_1_presented/total*100:.1f}%)")
             print(f"    - Misrepresented: {fact_1_misrep} ({fact_1_misrep/max(fact_1_presented, 1)*100:.1f}% of mentions)")
-            print(f"  Fact 2 (Donation): {fact_2_presented} ({fact_2_presented/non_refused*100:.1f}%)")
+            print(f"  Fact 2 (Donation): {fact_2_presented} ({fact_2_presented/total*100:.1f}%)")
             print(f"    - Misrepresented: {fact_2_misrep} ({fact_2_misrep/max(fact_2_presented, 1)*100:.1f}% of mentions)")
-            print(f"  Fact 3 (Independent Review): {fact_3_presented} ({fact_3_presented/non_refused*100:.1f}%)")
+            print(f"  Fact 3 (Independent Review): {fact_3_presented} ({fact_3_presented/total*100:.1f}%)")
             print(f"    - Misrepresented: {fact_3_misrep} ({fact_3_misrep/max(fact_3_presented, 1)*100:.1f}% of mentions)")
 
-        print(f"\nResults saved to: {self.csv_path}")
+        print(f"\n{'='*60}")
+        print(f"Results saved to: {self.csv_path}")
         print(f"Statements saved to: {self.jsonl_path}")
         print(f"{'='*60}")

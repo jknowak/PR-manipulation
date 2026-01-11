@@ -55,14 +55,17 @@ LAKEWOOD_SCENARIO = {
 # Models to test (via OpenRouter)
 MODELS = {
     "sonnet": "anthropic/claude-sonnet-4.5",
-    "opus": "anthropic/claude-opus-4.5",
-    "gpt4o": "openai/gpt-4o",
     "gpt4o-mini": "openai/gpt-4o-mini",
-    "llama": "meta-llama/llama-3.3-70b-instruct"
+    "llama": "meta-llama/llama-3.1-70b-instruct",
+    "grok-4": "x-ai/grok-4",
+    "deepseek": "deepseek/deepseek-v3.2"
 }
 
-# Judge model
-JUDGE_MODEL = "openai/gpt-4o-mini"
+# Judge models (dual judging)
+JUDGE_MODELS = {
+    "gemini": "google/gemini-2.5-flash",
+    "sonnet": "anthropic/claude-sonnet-4.5"
+}
 
 # Experiment parameters
 SEVERITY_IDS = ["fish", "poisoning", "child"]

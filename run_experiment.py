@@ -85,7 +85,7 @@ def run_experiment_sequential(smoke_test=False, runs_per_condition=None):
                         timestamp = datetime.now().isoformat()
                         print("  → Generating press release...")
                         generation_messages = build_generation_prompt(scenario_data)
-                        press_release = client.call(model_full_id, generation_messages, temperature=0.5)
+                        press_release = client.call(model_full_id, generation_messages, temperature=0.7)
                         print(f"  → Generated {len(press_release)} characters")
 
                         print("  → Judging press release...")
@@ -142,7 +142,7 @@ def run_experiment_sequential(smoke_test=False, runs_per_condition=None):
                                     stakes_tier=stakes_tier,
                                     measurement_condition=measurement_condition
                                 )
-                                press_release = client.call(model_full_id, generation_messages, temperature=0.5)
+                                press_release = client.call(model_full_id, generation_messages, temperature=0.7)
                                 print(f"  → Generated {len(press_release)} characters")
 
                                 print("  → Judging press release...")
@@ -323,7 +323,7 @@ async def run_experiment_concurrent(smoke_test=False, runs_per_condition=None, m
 
             press_releases = await client.call_batch(
                 batch_generation_requests,
-                temperature=0.5,
+                temperature=0.7,
                 progress_callback=update_gen_progress
             )
 
@@ -455,8 +455,8 @@ def run_experiment(smoke_test=False, runs_per_condition=None, concurrent=False, 
 
 
 async def run_lakewood_experiment(smoke_test=False, runs_per_condition=None, max_concurrent=10, max_rpm=60, batch_size=50):
-    """Run Lakewood Manufacturing experiment concurrently."""
-    from scenarios_lakewood import SEVERITY_IDS, PROBABILITY_CONDITIONS, MODEL_IDS, MODELS, JUDGE_MODEL, TOTAL_RUNS
+    """Run Lakewood Manufacturing experiment concurrently with dual judging."""
+    from scenarios_lakewood import SEVERITY_IDS, PROBABILITY_CONDITIONS, MODEL_IDS, MODELS, JUDGE_MODELS, TOTAL_RUNS
     from prompts_lakewood import build_generation_prompt as build_lakewood_gen_prompt
     from prompts_lakewood import build_judge_prompt as build_lakewood_judge_prompt
     from parser_lakewood import parse_judge_response as parse_lakewood_response
@@ -548,14 +548,14 @@ async def run_lakewood_experiment(smoke_test=False, runs_per_condition=None, max
         print(f"{'='*60}")
 
         # Step 1: Generate press statements
-        print(f"\n[1/3] Generating {len(batch_generation_requests)} press statements...")
+        print(f"\n[1/4] Generating {len(batch_generation_requests)} press statements...")
         with tqdm(total=len(batch_generation_requests), desc="  Generating", unit="req") as pbar:
             def update_gen_progress():
                 pbar.update(1)
 
             statements = await client.call_batch(
                 batch_generation_requests,
-                temperature=0.5,
+                temperature=0.7,
                 progress_callback=update_gen_progress
             )
 
@@ -564,52 +564,88 @@ async def run_lakewood_experiment(smoke_test=False, runs_per_condition=None, max
         if generation_failures > 0:
             print(f"  ⚠ {generation_failures} generation(s) failed")
 
-        # Step 2: Build and execute judge requests
-        judge_requests = []
-        judge_metadata = []
+        # Step 2: Build judge requests for BOTH judges
+        # First, collect statements that succeeded
+        successful_statements = []
+        successful_metadata = []
 
         for statement, metadata in zip(statements, batch_metadata):
-            if isinstance(statement, Exception):
-                continue
+            if not isinstance(statement, Exception):
+                successful_statements.append(statement)
+                successful_metadata.append(metadata)
 
+        # Build requests for Gemini judge
+        judge_requests_gemini = []
+        for statement, metadata in zip(successful_statements, successful_metadata):
             judge_messages = build_lakewood_judge_prompt(
                 metadata['severity_level'],
                 metadata['include_probability'],
                 statement
             )
-
-            judge_requests.append({
-                'model_id': JUDGE_MODEL,
+            judge_requests_gemini.append({
+                'model_id': JUDGE_MODELS['gemini'],
                 'messages': judge_messages
             })
-            judge_metadata.append({
-                **metadata,
-                'press_statement': statement
+
+        # Build requests for Sonnet judge
+        judge_requests_sonnet = []
+        for statement, metadata in zip(successful_statements, successful_metadata):
+            judge_messages = build_lakewood_judge_prompt(
+                metadata['severity_level'],
+                metadata['include_probability'],
+                statement
+            )
+            judge_requests_sonnet.append({
+                'model_id': JUDGE_MODELS['sonnet'],
+                'messages': judge_messages
             })
 
-        print(f"\n[2/3] Judging {len(judge_requests)} press statements...")
-        with tqdm(total=len(judge_requests), desc="  Judging", unit="req") as pbar:
-            def update_judge_progress():
+        # Call Gemini judge
+        print(f"\n[2/4] Judging {len(judge_requests_gemini)} press statements with Gemini 2.5 Flash...")
+        with tqdm(total=len(judge_requests_gemini), desc="  Gemini 2.5", unit="req") as pbar:
+            def update_gemini_progress():
                 pbar.update(1)
 
-            judgments = await client.call_batch(
-                judge_requests,
+            judgments_gemini = await client.call_batch(
+                judge_requests_gemini,
                 temperature=0.0,
-                progress_callback=update_judge_progress
+                progress_callback=update_gemini_progress
             )
 
-        # Step 3: Process and save results
-        print(f"\n[3/3] Processing and saving results...")
+        # Call Sonnet judge
+        print(f"\n[3/4] Judging {len(judge_requests_sonnet)} press statements with Sonnet 4.5...")
+        with tqdm(total=len(judge_requests_sonnet), desc="  Sonnet 4.5", unit="req") as pbar:
+            def update_sonnet_progress():
+                pbar.update(1)
+
+            judgments_sonnet = await client.call_batch(
+                judge_requests_sonnet,
+                temperature=0.0,
+                progress_callback=update_sonnet_progress
+            )
+
+        # Step 3: Process and save results with both judge evaluations
+        print(f"\n[4/4] Processing and saving results...")
         batch_success = 0
         batch_failed = 0
 
-        for judgment_response, metadata in zip(judgments, judge_metadata):
-            if isinstance(judgment_response, Exception):
-                batch_failed += 1
-                continue
+        for judgment_gemini, judgment_sonnet, metadata, statement in zip(
+            judgments_gemini, judgments_sonnet, successful_metadata, successful_statements
+        ):
+            # Parse Gemini judge response
+            if isinstance(judgment_gemini, Exception):
+                judgment_gemini_parsed = None
+            else:
+                judgment_gemini_parsed = parse_lakewood_response(judgment_gemini)
 
-            judgment = parse_lakewood_response(judgment_response)
-            if judgment is None:
+            # Parse Sonnet judge response
+            if isinstance(judgment_sonnet, Exception):
+                judgment_sonnet_parsed = None
+            else:
+                judgment_sonnet_parsed = parse_lakewood_response(judgment_sonnet)
+
+            # Skip if both judges failed
+            if judgment_gemini_parsed is None and judgment_sonnet_parsed is None:
                 batch_failed += 1
                 continue
 
@@ -620,16 +656,27 @@ async def run_lakewood_experiment(smoke_test=False, runs_per_condition=None, max
                 "model": metadata['model_id'],
                 "model_full_id": metadata['model_full_id'],
                 "run": metadata['run'],
-                "press_statement": metadata['press_statement'],
-                "refused": judgment["refused"],
-                "refusal_reason": judgment.get("refusal_reason"),
-                "fact_1_presented": judgment.get("fact_1_presented"),
-                "fact_1_misrepresented": judgment.get("fact_1_misrepresented"),
-                "fact_2_presented": judgment.get("fact_2_presented"),
-                "fact_2_misrepresented": judgment.get("fact_2_misrepresented"),
-                "fact_3_presented": judgment.get("fact_3_presented"),
-                "fact_3_misrepresented": judgment.get("fact_3_misrepresented"),
-                "explanation": judgment.get("explanation")
+                "press_statement": statement,
+                # Gemini judge results
+                "refused_gemini": judgment_gemini_parsed["refused"] if judgment_gemini_parsed else None,
+                "refusal_reason_gemini": judgment_gemini_parsed.get("refusal_reason") if judgment_gemini_parsed else None,
+                "fact_1_presented_gemini": judgment_gemini_parsed.get("fact_1_presented") if judgment_gemini_parsed else None,
+                "fact_1_misrepresented_gemini": judgment_gemini_parsed.get("fact_1_misrepresented") if judgment_gemini_parsed else None,
+                "fact_2_presented_gemini": judgment_gemini_parsed.get("fact_2_presented") if judgment_gemini_parsed else None,
+                "fact_2_misrepresented_gemini": judgment_gemini_parsed.get("fact_2_misrepresented") if judgment_gemini_parsed else None,
+                "fact_3_presented_gemini": judgment_gemini_parsed.get("fact_3_presented") if judgment_gemini_parsed else None,
+                "fact_3_misrepresented_gemini": judgment_gemini_parsed.get("fact_3_misrepresented") if judgment_gemini_parsed else None,
+                "explanation_gemini": judgment_gemini_parsed.get("explanation") if judgment_gemini_parsed else None,
+                # Sonnet judge results
+                "refused_sonnet": judgment_sonnet_parsed["refused"] if judgment_sonnet_parsed else None,
+                "refusal_reason_sonnet": judgment_sonnet_parsed.get("refusal_reason") if judgment_sonnet_parsed else None,
+                "fact_1_presented_sonnet": judgment_sonnet_parsed.get("fact_1_presented") if judgment_sonnet_parsed else None,
+                "fact_1_misrepresented_sonnet": judgment_sonnet_parsed.get("fact_1_misrepresented") if judgment_sonnet_parsed else None,
+                "fact_2_presented_sonnet": judgment_sonnet_parsed.get("fact_2_presented") if judgment_sonnet_parsed else None,
+                "fact_2_misrepresented_sonnet": judgment_sonnet_parsed.get("fact_2_misrepresented") if judgment_sonnet_parsed else None,
+                "fact_3_presented_sonnet": judgment_sonnet_parsed.get("fact_3_presented") if judgment_sonnet_parsed else None,
+                "fact_3_misrepresented_sonnet": judgment_sonnet_parsed.get("fact_3_misrepresented") if judgment_sonnet_parsed else None,
+                "explanation_sonnet": judgment_sonnet_parsed.get("explanation") if judgment_sonnet_parsed else None
             }
 
             logger.log_result(result)
